@@ -14,14 +14,10 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.models import Sequential
 from tensorflow.keras import layers
 from tensorflow.keras.layers import Dense
-
+from utils import standard_data, split_data
 # 标准化数据
-def standard_data(X):
-    sc = StandardScaler()
-    X_scaled = sc.fit_transform(X)
-    return sc, X_scaled
 
-def get_data(version=0, drop_col_number=1, drop_col_name=None):
+def get_data():
     path_list = dict()
     for dirname, _, filenames in os.walk('D:/code/regression/dataset/mobilePrice'):
         for filename in filenames:
@@ -29,29 +25,11 @@ def get_data(version=0, drop_col_number=1, drop_col_name=None):
             path_list[file_type] = filename
     # 训练集
     train_df = pd.read_csv(path_list['train'])
-    col2idx = {str(item): idx for idx, item in enumerate(train_df.columns)}
-    idx2col = {idx: str(item) for idx, item in enumerate(train_df.columns)}
     # sort_corr = train_df.corr(method='spearman')['price_range'].sort_values(ascending=False)
     # sort_corr.drop('price_range', inplace=True)
-    if drop_col_name is None:
-        drop_col_id = np.random.randint(0, len(train_df.columns), drop_col_number)
-        drop_col_name = [idx2col[idx] for idx in drop_col_id]
-    else:
-        drop_col_name = drop_col_name.split('*')
-
-    if version != 0:
-        X = train_df.drop(['price_range'], axis=1)
-        X = X.drop(drop_col_name, axis=1)
-    else:
-        drop_col_name = []
-        X = train_df.drop(['price_range'], axis=1)
+    X = train_df.drop(['price_range'], axis=1)
     y = train_df['price_range']
-    return X, y, col2idx, idx2col, drop_col_name
-
-def split_data(X, y):
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42)
-    return X_train, X_test, X_val, y_train, y_test, y_val
+    return X, y
 
 def load_model(version=0, drop_col_number=1):
     model = Sequential()
@@ -81,18 +59,71 @@ def get_args():
 
 def main():
     params = get_args()
-
-    X, y, col2idx, idx2col, drop_col_name = get_data(version=params.version, drop_col_number=params.drop_col_number,
-                                                     drop_col_name=params.drop_col_name)
-    sc, X_scaled = standard_data(X)
-    X_train, X_test, X_val, y_train, y_test, y_val = split_data(X_scaled, y)
-
-    if params.drop_col_name is not None:
-        drop_col_number = len(drop_col_name)
-    else:
-        drop_col_number = params.drop_col_number
+    if not os.path.exists('./data/0'):
+        os.makedirs('./data/0')
     if params.version == 0:
+        X, y= get_data()
+        sc, X_scaled = standard_data(X)
+        X_train, X_test, X_val, y_train, y_test, y_val = split_data(X_scaled, y)
+        np.save('./data/0/X_train.npy', X_train)
+        np.save('./data/0/X_test.npy', X_test)
+        np.save('./data/0/X_val.npy', X_val)
+        np.save('./data/0/y_train.npy', y_train)
+        np.save('./data/0/y_test.npy', y_test)
+        np.save('./data/0/y_val.npy', y_val)
+    else:
+        X_train = np.load('./data/0/X_train.npy')
+        X_test = np.load('./data/0/X_test.npy')
+        X_val = np.load('./data/0/X_val.npy')
+        y_train = np.load('./data/0/y_train.npy')
+        y_test = np.load('./data/0/y_test.npy')
+        y_val = np.load('./data/0/y_val.npy')
+        print('load data from npy')
+
+    path_list = dict()
+    for dirname, _, filenames in os.walk('D:/code/regression/dataset/mobilePrice'):
+        for filename in filenames:
+            filename, file_type = os.path.join(dirname, filename), filename.split('.')[0]
+            path_list[file_type] = filename
+    # 训练集
+    train_df = pd.read_csv(path_list['train'])
+    col2idx = {str(item): idx for idx, item in enumerate(train_df.columns)}
+    idx2col = {idx: str(item) for idx, item in enumerate(train_df.columns)}
+    if params.drop_col_name is None:
+        drop_col_id = np.random.randint(0, len(train_df.columns), params.drop_col_number)
+        drop_col_name = [idx2col[idx] for idx in drop_col_id]
+    else:
+        drop_col_name = params.drop_col_name.split('*')
+
+    if params.version != 0:
+        columns = [item for item in col2idx.keys()]
+        columns = columns[:-1]
+
+        X_train = pd.DataFrame(X_train, columns=columns)
+        X_test = pd.DataFrame(X_test, columns=columns)
+        X_val = pd.DataFrame(X_val, columns=columns)
+        X_train = X_train.drop(drop_col_name, axis=1)
+        X_test = X_test.drop(drop_col_name, axis=1)
+        X_val = X_val.drop(drop_col_name, axis=1)
+        # 判断是根据名称进行删除
+        if params.drop_col_name is not None:
+            drop_col_number = len(drop_col_name)
+        else:
+            drop_col_number = params.drop_col_number
+        save_data_path = './data/{}-{}'.format(drop_col_number, "-".join(drop_col_name))
+        if not os.path.exists(save_data_path):
+            os.makedirs(save_data_path)
+        np.save('{}/X_train.npy'.format(save_data_path), X_train)
+        np.save('{}/X_test.npy'.format(save_data_path), X_test)
+        np.save('{}/X_val.npy'.format(save_data_path), X_val)
+        np.save('{}/y_train.npy'.format(save_data_path), y_train)
+        np.save('{}/y_test.npy'.format(save_data_path), y_test)
+        np.save('{}/y_val.npy'.format(save_data_path), y_val)
+        print('save data to npy')
+    else:
+        drop_col_name = []
         drop_col_number = 0
+
 
     model = load_model(version=params.version, drop_col_number=drop_col_number)
     model.summary()
