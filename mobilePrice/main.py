@@ -21,7 +21,7 @@ def standard_data(X):
     X_scaled = sc.fit_transform(X)
     return sc, X_scaled
 
-def get_data(version=1, drop_col_number=1):
+def get_data(version=0, drop_col_number=1, drop_col_name=None):
     path_list = dict()
     for dirname, _, filenames in os.walk('D:/code/regression/dataset/mobilePrice'):
         for filename in filenames:
@@ -31,120 +31,78 @@ def get_data(version=1, drop_col_number=1):
     train_df = pd.read_csv(path_list['train'])
     col2idx = {str(item): idx for idx, item in enumerate(train_df.columns)}
     idx2col = {idx: str(item) for idx, item in enumerate(train_df.columns)}
-    sort_corr.drop('price_range', inplace=True)
-    drop_col_id = np.random.randint(0, len(sort_corr), drop_col_number)
-    drop_col_name = [idx2col[idx] for idx in drop_col_id]
+    # sort_corr = train_df.corr(method='spearman')['price_range'].sort_values(ascending=False)
+    # sort_corr.drop('price_range', inplace=True)
+    if drop_col_name is None:
+        drop_col_id = np.random.randint(0, len(train_df.columns), drop_col_number)
+        drop_col_name = [idx2col[idx] for idx in drop_col_id]
+    else:
+        drop_col_name = drop_col_name.split('*')
 
-    if version == 1:
+    if version != 0:
         X = train_df.drop(['price_range'], axis=1)
         X = X.drop(drop_col_name, axis=1)
     else:
+        drop_col_name = []
         X = train_df.drop(['price_range'], axis=1)
     y = train_df['price_range']
-    sc, X_scaled = standard_data(X)
+    return X, y, col2idx, idx2col, drop_col_name
 
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.30, random_state=42)
+def split_data(X, y):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=42)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42)
     return X_train, X_test, X_val, y_train, y_test, y_val
 
-def load_model(version=1, train=False):
+def load_model(version=0, drop_col_number=1):
     model = Sequential()
-    filepath = "./model/weights.best.hdf5"
-    if version == 1:
-        model.add(Dense(18, activation='relu', input_dim=18))
+    if version != 0:
+        model.add(Dense(20-drop_col_number, activation='relu', input_dim=20-drop_col_number))
         model.add(Dense(5, activation='relu'))
         model.add(Dense(4, activation='softmax'))
-        filepath = "./model/weights.best.hdf5"
 
     else:
         model.add(Dense(20, activation='relu', input_dim=20))
         model.add(Dense(5, activation='relu'))
         model.add(Dense(4, activation='softmax'))
-        filepath = "./model/new_weights.best.hdf5"
 
-    X_train, X_test, X_val, y_train, y_test, y_val = get_data(version=version)
-    if train:
-        model.compile(optimizer='adam', loss = 'sparse_categorical_crossentropy',metrics=['accuracy'])
-        checkpoint = ModelCheckpoint(filepath, monitor='val_accuracy', verbose=1, save_best_only=True,
-                                     mode='max')
-        callbacks_list = [checkpoint]
-        history = model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=32, epochs=100, callbacks=callbacks_list, verbose=0)
-    else:
-        model.load_weights(filepath)
-        model.compile(optimizer='adam', loss = 'sparse_categorical_crossentropy',metrics=['accuracy'])
-
-
-    scores = model.evaluate(X_test, y_test, verbose=0)
-    print("{0}: {1:.2f}%".format(model.metrics_names[1], scores[1]*100))
     return model
 
 
+def get_args():
+    import argparse
 
+    parser = argparse.ArgumentParser(description="Experiment")
+    parser.add_argument("--version", type=int, default=1, help="version")
+    parser.add_argument("--drop_col_number", type=int, default=3, help="Number of deleted columns, if version ==0, this parameter is invalid")
+    parser.add_argument("--drop_col_name", type=str, default=None, help="Deletes the column name of the model, If you specify the number, you don't need to specify the column name")
+    parser.add_argument("--train", type=bool, default=True, help="train or not")
+    params = parser.parse_args()
+    return params
 
 def main():
-    train = False
-    # 采集数据
-    path_list = dict()
-    for dirname, _, filenames in os.walk('D:/code/regression/dataset/mobilePrice'):
-        for filename in filenames:
-            filename, file_type = os.path.join(dirname, filename), filename.split('.')[0]
-            path_list[file_type] = filename
-    # 训练集
-    train_df = pd.read_csv(path_list['train'])
-    X = train_df.drop(['price_range', 'px_width', 'px_height'], axis=1)
-    y = train_df['price_range']
-    sc = StandardScaler()
-    X_scaled = sc.fit_transform(X)
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.30, random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42)
-    ## 定义模型
-    model = Sequential()
-    model.add(Dense(18, activation='relu', input_dim=18))
-    model.add(Dense(5, activation='relu'))
-    model.add(Dense(4, activation='softmax'))
-    model.summary()
-    filepath = "./model/weights.best.hdf5"
+    params = get_args()
 
-    if train:
-        model.compile(optimizer='adam', loss = 'sparse_categorical_crossentropy',metrics=['accuracy'])
-        checkpoint = ModelCheckpoint(filepath, monitor='val_accuracy', verbose=1, save_best_only=True,
-                                     mode='max')
-        callbacks_list = [checkpoint]
-        history = model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=32, epochs=100, callbacks=callbacks_list, verbose=0)
+    X, y, col2idx, idx2col, drop_col_name = get_data(version=params.version, drop_col_number=params.drop_col_number,
+                                                     drop_col_name=params.drop_col_name)
+    sc, X_scaled = standard_data(X)
+    X_train, X_test, X_val, y_train, y_test, y_val = split_data(X_scaled, y)
+
+    if params.drop_col_name is not None:
+        drop_col_number = len(drop_col_name)
     else:
-        model.load_weights(filepath)
-        model.compile(optimizer='adam', loss = 'sparse_categorical_crossentropy',metrics=['accuracy'])
+        drop_col_number = params.drop_col_number
+    if params.version == 0:
+        drop_col_number = 0
 
-
-    scores = model.evaluate(X_test, y_test, verbose=0)
-    print("{0}: {1:.2f}%".format(model.metrics_names[1], scores[1]*100))
-
-
-def add_column():
-    train = True
-    # 采集数据
-    path_list = dict()
-    for dirname, _, filenames in os.walk('D:/code/regression/dataset/mobilePrice'):
-        for filename in filenames:
-            filename, file_type = os.path.join(dirname, filename), filename.split('.')[0]
-            path_list[file_type] = filename
-    # 训练集
-    train_df = pd.read_csv(path_list['train'])
-    X = train_df.drop(['price_range'], axis=1)
-    y = train_df['price_range']
-    sc = StandardScaler()
-    X_scaled = sc.fit_transform(X)
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.30, random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42)
-    ## 定义模型
-    model = Sequential()
-    model.add(Dense(20, activation='relu', input_dim=20))
-    model.add(Dense(5, activation='relu'))
-    model.add(Dense(4, activation='softmax'))
+    model = load_model(version=params.version, drop_col_number=drop_col_number)
     model.summary()
-    filepath = "./model/new_weights.best.hdf5"
-
-    if train:
+    if os.path.exists('./model') is False:
+        os.mkdir('./model')
+    if params.version == 0:
+        filepath = './model/{}-weights.hdf5'.format(drop_col_number)
+    else:
+        filepath = './model/{}-{}-weights.hdf5'.format(drop_col_number, "-".join(drop_col_name))
+    if params.train:
         model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         checkpoint = ModelCheckpoint(filepath, monitor='val_accuracy', verbose=1, save_best_only=True,
                                      mode='max')
@@ -154,30 +112,19 @@ def add_column():
     else:
         model.load_weights(filepath)
         model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
     scores = model.evaluate(X_test, y_test, verbose=0)
-    print("{0}: {1:.2f}%".format(model.metrics_names[1], scores[1] * 100))
-    return model
+    result = {'accuracy': "{:.2f}%".format(scores[1] * 100), 'loss': scores[0],
+              'drop_col_name': "-".join(drop_col_name), 'drop_col_number': drop_col_number, 'version': params.version}
+    save_file_path = './result/model_acc_result.csv'
+    if not os.path.exists('./result'):
+        os.mkdir('./result')
+    if not os.path.exists(save_file_path):
+        pd.DataFrame(result, index=[0]).to_csv(save_file_path, index=False)
+    else:
+        pd.DataFrame(result, index=[0]).to_csv(save_file_path, mode='a', header=False, index=False)
+
 
 
 
 if __name__ == '__main__':
-    path_list = dict()
-    for dirname, _, filenames in os.walk('D:/code/regression/dataset/mobilePrice'):
-        for filename in filenames:
-            filename, file_type = os.path.join(dirname, filename), filename.split('.')[0]
-            path_list[file_type] = filename
-    # 训练集
-    train_df = pd.read_csv(path_list['train'])
-    # column到idx的映射
-    col2idx = {str(item): idx for idx, item in enumerate(train_df.columns)}
-    idx2col = {idx: str(item) for idx, item in enumerate(train_df.columns)}
-
-    # 标签与属性的关联性排序
-    sort_corr = train_df.corr(method='spearman')['price_range'].sort_values(ascending=False)
-    sort_corr.drop('price_range', inplace=True)
-    drop_col_id = np.random.randint(0, len(sort_corr), 2)
-    drop_col_name = [idx2col[idx] for idx in drop_col_id]
-    X = train_df.drop(['price_range'], axis=1)
-    X = X.drop(drop_col_name, axis=1)
-    print(X.head())
+    main()
