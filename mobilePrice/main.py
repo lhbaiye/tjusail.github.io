@@ -73,7 +73,7 @@ def get_args():
 
     parser = argparse.ArgumentParser(description="Experiment")
     parser.add_argument("--version", type=int, default=1, help="version")
-    parser.add_argument("--drop_col_number", type=int, default=3, help="Number of deleted columns, if version ==0, this parameter is invalid")
+    parser.add_argument("--drop_col_number", type=int, default=2, help="Number of deleted columns, if version ==0, this parameter is invalid")
     parser.add_argument("--drop_col_name", type=str, default=None, help="Deletes the column name of the model, If you specify the number, you don't need to specify the column name")
     parser.add_argument("--train", type=bool, default=True, help="train or not")
     params = parser.parse_args()
@@ -114,7 +114,7 @@ def main():
         model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     scores = model.evaluate(X_test, y_test, verbose=0)
     result = {'accuracy': "{:.2f}%".format(scores[1] * 100), 'loss': scores[0],
-              'drop_col_name': "-".join(drop_col_name), 'drop_col_number': drop_col_number, 'version': params.version}
+              'drop_col_name': "-".join(drop_col_name), 'drop_col_number': drop_col_number, 'version': params.version, 'filepath': filepath}
     save_file_path = './result/model_acc_result.csv'
     if not os.path.exists('./result'):
         os.mkdir('./result')
