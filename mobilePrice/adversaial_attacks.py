@@ -104,6 +104,7 @@ class PGD:
             drop_col_idx = []
         x_adv = tf.Variable(x, dtype='float32')
         for i in range(self.epochs):
+            ##1.对所有列都求梯度，但是只在需要的列上面加
             with tf.GradientTape() as tape:
                 loss = tf.keras.losses.categorical_crossentropy(target, self.model(x_adv))
                 grads = tape.gradient(loss, x_adv)
@@ -118,6 +119,28 @@ class PGD:
                     delta[:, col] = 0
                 delta = tf.convert_to_tensor(delta)
                 x_adv.assign_add(self.step * delta)
+
+            ##2.只对需要的列求梯度
+            # if type == 'all':
+            #     with tf.GradientTape() as tape:
+            #         loss = tf.keras.losses.categorical_crossentropy(target, self.model(x_adv))
+            #         grads = tape.gradient(loss, x_adv)
+            #     delta = tf.sign(grads)
+            #     x_adv.assign_add(self.step * delta)
+            # else:
+            #     x_adv_add = [x[:, col] for col in drop_col_idx]
+            #     x_adv_add = np.array(x_adv_add)
+            #     x_adv_add = x_adv_add.T
+            #     x_adv_add_variable = tf.Variable(x_adv_add, dtype='float32')
+            #     with tf.GradientTape() as tape:
+            #         loss = tf.keras.losses.categorical_crossentropy(target, self.model(x_adv))
+            #         grads = tape.gradient(loss, x_adv_add_variable)
+            #     delta = tf.sign(grads)
+            #     x_adv_add_variable.assign_add(self.step * delta)
+            #     np_x_adv = x_adv.numpy()
+            #     for index, col in enumerate(drop_col_idx):
+            #         np_x_adv[:, col] = x_adv_add_variable.numpy()[index]
+            #     x_adv = tf.convert_to_tensor(np_x_adv)
             x_adv = tf.clip_by_value(x_adv, clip_value_min=self.clip_min, clip_value_max=self.clip_max)
             x_adv = tf.Variable(x_adv)
 
