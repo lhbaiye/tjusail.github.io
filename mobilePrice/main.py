@@ -57,8 +57,7 @@ def get_args():
     params = parser.parse_args()
     return params
 
-def main():
-    params = get_args()
+def main(params):
     if not os.path.exists('./data/0'):
         os.makedirs('./data/0')
     if params.version == 0:
@@ -90,7 +89,8 @@ def main():
     col2idx = {str(item): idx for idx, item in enumerate(train_df.columns)}
     idx2col = {idx: str(item) for idx, item in enumerate(train_df.columns)}
     if params.drop_col_name is None:
-        drop_col_id = np.random.randint(0, len(train_df.columns), params.drop_col_number)
+        # drop_col_id = np.random.randint(0, len(train_df.columns), params.drop_col_number)
+        drop_col_id = np.random.choice(range(len(train_df.columns) - 1), params.drop_col_number, replace=False)
         drop_col_name = [idx2col[idx] for idx in drop_col_id]
     else:
         drop_col_name = params.drop_col_name.split('*')
@@ -110,7 +110,7 @@ def main():
             drop_col_number = len(drop_col_name)
         else:
             drop_col_number = params.drop_col_number
-        save_data_path = './data/{}-{}'.format(drop_col_number, "-".join(drop_col_name))
+        save_data_path = './data/{}-{}-{}'.format(params.version, drop_col_number, "-".join(drop_col_name))
         if not os.path.exists(save_data_path):
             os.makedirs(save_data_path)
         np.save('{}/X_train.npy'.format(save_data_path), X_train)
@@ -132,7 +132,7 @@ def main():
     if params.version == 0:
         filepath = './model/{}-weights.hdf5'.format(drop_col_number)
     else:
-        filepath = './model/{}-{}-weights.hdf5'.format(drop_col_number, "-".join(drop_col_name))
+        filepath = './model/{}-{}-{}-weights.hdf5'.format(params.version, drop_col_number, "-".join(drop_col_name))
     if params.train:
         model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         checkpoint = ModelCheckpoint(filepath, monitor='val_accuracy', verbose=1, save_best_only=True,
@@ -155,7 +155,23 @@ def main():
         pd.DataFrame(result, index=[0]).to_csv(save_file_path, mode='a', header=False, index=False)
 
 
+def start(epoch, drop_col_number):
+    version = 1
+    for i in range(epoch):
+        params = get_args()
+        params.drop_col_number = drop_col_number
+        params.version = version
+        main(params)
+        version += 1
+
 
 
 if __name__ == '__main__':
-    main()
+    setting_list = [
+        {'epoch': 20, 'drop_col_number': 1},
+        {'epoch': 20, 'drop_col_number': 2},
+        {'epoch': 20, 'drop_col_number': 3},
+    ]
+
+    for setting in setting_list:
+        start(setting['epoch'], setting['drop_col_number'])
