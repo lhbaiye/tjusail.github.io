@@ -76,7 +76,7 @@ class PGD:
 
 
 
-    def generate(self, x, y, col2idx, idx2col, type='all', randRate=1, column = None):
+    def generate(self, x_batch, y_batch, col2idx, idx2col, type='all', randRate=1, column = None):
         """
         args:
             x: normal inputs
@@ -87,62 +87,47 @@ class PGD:
             successed adversarial examples and corresponding ground-truth labels
         """
         # 扩充维度
-        y = np.expand_dims(y, axis=1)
-        target = tf.constant(y, dtype='float32')
-        # if self.isRand:
-        #     x = x + np.random.uniform(-self.ep * randRate, self.ep * randRate, x.shape)
-        #     x = np.clip(x, self.clip_min, self.clip_max)
-        if column is not None:
-            drop_col_name = column.split('-')
-            drop_col_idx = [col2idx[col] for col in drop_col_name]
-        else:
-            drop_col_idx = []
-        x_adv = tf.Variable(x, dtype='float32')
-        for i in range(self.epochs):
-            ##1.对所有列都求梯度，但是只在需要的列上面加
-            with tf.GradientTape() as tape:
-                loss = tf.abs(tf.subtract(target, self.model(x_adv)))
-                # loss = tf.keras.losses.categorical_crossentropy(target, self.model(x_adv))
-                grads = tape.gradient(loss, x_adv)
-            delta = tf.sign(grads)
-            if type == 'all':
-                x_adv.assign_add(self.step * delta)
+        y_batch = np.expand_dims(y_batch, axis=1)
+        success_times = 0
+        for x, y in zip(x_batch, y_batch):
+            target = tf.constant(y, dtype='float32')
+            # if self.isRand:
+            #     x = x + np.random.uniform(-self.ep * randRate, self.ep * randRate, x.shape)
+            #     x = np.clip(x, self.clip_min, self.clip_max)
+            if column is not None:
+                drop_col_name = column.split('-')
+                drop_col_idx = [col2idx[col] for col in drop_col_name]
             else:
-                delta = delta.numpy()
-                for col in range(delta.shape[1]):
-                    if col in drop_col_idx:
-                        continue
-                    delta[:, col] = 0
-                delta = tf.convert_to_tensor(delta)
-                x_adv.assign_add(self.step * delta)
+                drop_col_idx = []
+            x = np.expand_dims(x, axis=0)
+            x_adv = tf.Variable(x, dtype='float32')
 
-            ##2.只对需要的列求梯度
-            # if type == 'all':
-            #     with tf.GradientTape() as tape:
-            #         loss = tf.keras.losses.categorical_crossentropy(target, self.model(x_adv))
-            #         grads = tape.gradient(loss, x_adv)
-            #     delta = tf.sign(grads)
-            #     x_adv.assign_add(self.step * delta)
-            # else:
-            #     x_adv_add = [x[:, col] for col in drop_col_idx]
-            #     x_adv_add = np.array(x_adv_add)
-            #     x_adv_add = x_adv_add.T
-            #     x_adv_add_variable = tf.Variable(x_adv_add, dtype='float32')
-            #     with tf.GradientTape() as tape:
-            #         loss = tf.keras.losses.categorical_crossentropy(target, self.model(x_adv))
-            #         grads = tape.gradient(loss, x_adv_add_variable)
-            #     delta = tf.sign(grads)
-            #     x_adv_add_variable.assign_add(self.step * delta)
-            #     np_x_adv = x_adv.numpy()
-            #     for index, col in enumerate(drop_col_idx):
-            #         np_x_adv[:, col] = x_adv_add_variable.numpy()[index]
-            #     x_adv = tf.convert_to_tensor(np_x_adv)
-            x_adv = tf.clip_by_value(x_adv, clip_value_min=self.clip_min, clip_value_max=self.clip_max)
-            x_adv = tf.Variable(x_adv)
+            for i in range(self.epochs):
+                ##1.对所有列都求梯度，但是只在需要的列上面加
+                with tf.GradientTape() as tape:
+                    loss = tf.abs(tf.subtract(target, self.model(x_adv)))
+                    # loss = tf.keras.losses.categorical_crossentropy(target, self.model(x_adv))
+                    grads = tape.gradient(loss, x_adv)
+                delta = tf.sign(grads)
+                if type == 'all':
+                    x_adv.assign_add(self.step * delta)
+                else:
+                    delta = delta.numpy()
+                    for col in range(delta.shape[1]):
+                        if col in drop_col_idx:
+                            continue
+                        delta[:, col] = 0
+                    delta = tf.convert_to_tensor(delta)
+                    x_adv.assign_add(self.step * delta)
 
-        success_idx = np.where(np.argmax(self.model(x_adv), axis=1) != np.argmax(y, axis=1))[0]
-        return "{:.2f}%".format(len(success_idx) / len(x)  * 100)
-        # return x_adv.numpy()[success_idx], y[success_idx]
+                x_adv = tf.clip_by_value(x_adv, clip_value_min=self.clip_min, clip_value_max=self.clip_max)
+                x_adv = tf.Variable(x_adv)
+                predict_class = self.model.predict_classes(x_adv.numpy())
+                if predict_class != y:
+                    success_times += 1
+                    break
+
+        return "{:.2f}%".format(success_times / len(x_batch)  * 100)
 
 if __name__ == '__main__':
     path_list = dict()
