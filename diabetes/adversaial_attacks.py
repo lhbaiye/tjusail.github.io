@@ -43,20 +43,21 @@ class statistical_result:
     test_attack_success_rate = None
     train_column_attack_rate = None
     test_column_attack_rate = None
+    base_column_attack_rate = None
     def __init__(self, ):
         super().__init__()
 
     def keys(self):
         '''当对实例化对象使用dict(obj)的时候, 会调用这个方法,这里定义了字典的键, 其对应的值将以obj['name']的形式取,
            但是对象是不可以以这种方式取值的, 为了支持这种取值, 可以为类增加一个方法'''
-        return ['drop_col_name', 'drop_col_number', 'version', 'accuracy', 'loss', 'filepath', 'train_attack_success_rate', 'test_attack_success_rate', 'train_column_attack_rate', 'test_column_attack_rate']
+        return ['drop_col_name', 'drop_col_number', 'version', 'accuracy', 'loss', 'filepath', 'train_attack_success_rate', 'test_attack_success_rate', 'train_column_attack_rate', 'test_column_attack_rate', 'base_column_attack_rate']
 
     def __getitem__(self, item):
         '''内置方法, 当使用obj['name']的形式的时候, 将调用这个方法, 这里返回的结果就是值'''
         return getattr(self, item)
 
 class PGD:
-    def __init__(self, model, ep=0.3, epochs=10, step=0.03, isRand=True, clip_min=0, clip_max=1):
+    def __init__(self, model, ep=0.3, epochs=10, step=0.03, isRand=False, clip_min=0, clip_max=1):
         """
         args:
             model: victim model
@@ -91,9 +92,9 @@ class PGD:
         success_times = 0
         for x, y in zip(x_batch, y_batch):
             target = tf.constant(y, dtype='float32')
-            # if self.isRand:
-            #     x = x + np.random.uniform(-self.ep * randRate, self.ep * randRate, x.shape)
-            #     x = np.clip(x, self.clip_min, self.clip_max)
+            if self.isRand:
+                x = x + np.random.uniform(-self.ep * randRate, self.ep * randRate, x.shape)
+                x = np.clip(x, self.clip_min, self.clip_max)
             if column is not None:
                 drop_col_name = column.split('-')
                 drop_col_idx = [col2idx[col] for col in drop_col_name]
@@ -131,7 +132,7 @@ class PGD:
 
 if __name__ == '__main__':
     path_list = dict()
-    for dirname, _, filenames in os.walk('D:/code/regression/dataset/diabetes'):
+    for dirname, _, filenames in os.walk('D:/code/pythonProject/regression/dataset/diabetes'):
         for filename in filenames:
             filename, file_type = os.path.join(dirname, filename), filename.split('.')[0]
             path_list[file_type] = filename
@@ -193,29 +194,37 @@ if __name__ == '__main__':
             y_val = np.load('{}/y_val.npy'.format(save_data_path))
         # 生成对抗样本
         pgd = PGD(model, ep=opt.ep, epochs=opt.iters)
-        train_attack_success_rate = pgd.generate(X_train, y_train, col2idx, idx2col, type='all')
-
+        # train_attack_success_rate = pgd.generate(X_train, y_train, col2idx, idx2col, type='all')
+        train_attack_success_rate = 0
         pgd = PGD(model, ep=opt.ep, epochs=opt.iters)
         test_attack_success_rate = pgd.generate(X_test, y_test, col2idx, idx2col, type='all')
 
         train_column_attack_rate = 0
         test_column_attack_rate = 0
-
+        base_column_attack_rate = 0
         if s_r_c.version != 0:
             pgd = PGD(base_model_model, ep=opt.ep, epochs=opt.iters)
-            train_column_attack_rate = pgd.generate(base_X_train, base_y_train, col2idx, idx2col, type='add', column = s_r_c.drop_col_name)
-
+            # train_column_attack_rate = pgd.generate(base_X_train, base_y_train, col2idx, idx2col, type='add', column=s_r_c.drop_col_name)
+            train_column_attack_rate = 0
             pgd = PGD(base_model_model, ep=opt.ep, epochs=opt.iters)
-            test_column_attack_rate = pgd.generate(base_X_test, base_y_test, col2idx, idx2col, type='add', column = s_r_c.drop_col_name)
+            test_column_attack_rate = pgd.generate(base_X_test, base_y_test, col2idx, idx2col, type='add', column=s_r_c.drop_col_name)
+
+            drop_col_name = s_r_c.drop_col_name.split('-')
+            base_column_name = list(set(col2idx.keys()) - set(drop_col_name) - set(['Outcome']))
+            base_column_name = '-'.join(base_column_name)
+            pgd = PGD(base_model_model, ep=opt.ep, epochs=opt.iters)
+            base_column_attack_rate = pgd.generate(base_X_test, base_y_test, col2idx, idx2col, type='add', column=base_column_name)
 
         s_r_c.train_attack_success_rate = train_attack_success_rate
         s_r_c.test_attack_success_rate = test_attack_success_rate
         s_r_c.train_column_attack_rate = train_column_attack_rate
         s_r_c.test_column_attack_rate = test_column_attack_rate
+        s_r_c.base_column_attack_rate = base_column_attack_rate
 
         save_file_path = './result/model_attack_result.csv'
         if not os.path.exists('./result'):
             os.mkdir('./result')
+        save_file_path = './model_attack_result.csv'
         if not os.path.exists(save_file_path):
             pd.DataFrame(dict(s_r_c), index=[0]).to_csv(save_file_path, index=False)
         else:
